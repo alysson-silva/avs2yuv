@@ -27,14 +27,15 @@
 #define INT_MAX 0x7fffffff
 #endif
 
-#define MY_VERSION "Avs2YUV 0.23"
+#define MY_VERSION "Avs2YUV 0.24"
 #define MAX_FH 10
 
 int __cdecl main(int argc, const char* argv[])
 {
 	const char* infile = NULL;
-	const char* outfile[MAX_FH];
 	const char* hfyufile = NULL;
+	const char* outfile[MAX_FH];
+	int         y4m_headers[MAX_FH];
 	FILE* out_fh[10];
 	int out_fhs = 0;
 	int verbose = 0;
@@ -42,6 +43,7 @@ int __cdecl main(int argc, const char* argv[])
 	int seek = 0;
 	int end = 0;
 	int slave = 0;
+	int rawyuv = 0;
 	int frm = -1;
 	int i;
 	int write_target = 0; // how many bytes per frame we expect to write
@@ -66,6 +68,8 @@ int __cdecl main(int argc, const char* argv[])
 			} else if(!strcmp(argv[i], "-hfyu")) {
 				if(i > argc-2) {fprintf(stderr, "-hfyu needs an argument\n"); return 2;}
 				hfyufile = argv[++i];
+			} else if(!strcmp(argv[i], "-raw")) {
+				rawyuv = 1;
 			} else if(!strcmp(argv[i], "-slave")) {
 				slave = 1;
 			} else
@@ -80,6 +84,7 @@ add_outfile:
 			if(out_fhs > MAX_FH-1)
 				{fprintf(stderr, "too many output file\n"); return 2;}
 			outfile[out_fhs] = argv[i];
+			y4m_headers[out_fhs] = !rawyuv;
 			out_fhs++;
 		}
 	}
@@ -91,6 +96,7 @@ add_outfile:
 		"-seek\tseek to the given frame number\n"
 		"-frames\tstop after processing this many frames\n"
 		"-slave\tread a list of frame numbers from stdin (one per line)\n"
+                "-raw\toutputs raw I420 instead of yuv4mpeg\n"
 		"The outfile may be \"-\", meaning stdout.\n"
 		"Output format is yuv4mpeg, as used by MPlayer and mjpegtools\n"
 		"Huffyuv output requires MEncoder, and probably doesn't work in Wine.\n"
@@ -154,11 +160,14 @@ add_outfile:
 			out_fh[out_fhs] = popen(cmd, "wb");
 			if(!out_fh[out_fhs])
 				{fprintf(stderr, "failed to exec mencoder\n"); return 1;}
+			y4m_headers[out_fhs] = 1;
 			out_fhs++;
 			delete [] cmd;
 		}
 
 		for(i=0; i<out_fhs; i++) {
+			if(!y4m_headers[i])
+				continue;
 			fprintf(out_fh[i], "YUV4MPEG2 W%d H%d F%ld:%ld Ip A0:0\n",
 				inf.width, inf.height, inf.fps_numerator, inf.fps_denominator);
 			fflush(out_fh[i]);
@@ -195,7 +204,8 @@ add_outfile:
 				int wrote = 0;
 
 				for(i=0; i<out_fhs; i++)
-					fwrite("FRAME\n", 1, 6, out_fh[i]);
+					if(y4m_headers[i])
+						fwrite("FRAME\n", 1, 6, out_fh[i]);
 
 				for(int p=0; p<3; p++) {
 					int w = inf.width  >> (p ? 1 : 0);

@@ -12,7 +12,7 @@
 
 #include "avisynth_c.h"
 
-#define MY_VERSION "Avs2YUV 0.11"
+#define MY_VERSION "Avs2YUV 0.12"
 
 int main(int argc, const char* argv[])
 {
@@ -68,19 +68,22 @@ int main(int argc, const char* argv[])
 	
 	AVS_ScriptEnvironment* env = 
 		avs_create_script_environment(AVISYNTH_INTERFACE_VERSION);
-	AVS_Value arg0 = avs_new_value_string(infile);
-	AVS_Value args = avs_new_value_array(&arg0, 1);
-	AVS_Value res = avs_invoke(env, "avisource", args, 0);
+	AVS_Value afile = avs_new_value_string(infile);
+	AVS_Value args = avs_new_value_array(&afile, 1);
+	AVS_Value res = avs_invoke(env, "import", args, 0);
 	AVS_Clip* clip = avs_take_clip(res, env);
 	const AVS_VideoInfo* inf = avs_get_video_info(clip);
 
 	if(!avs_is_yv12(inf)) {
 		fprintf(stderr, "Converting to YV12\n");
+		avs_release_value(args);
 		args = avs_new_value_array(&res, 1);
 		res = avs_invoke(env, "converttoyv12", args, 0);
 		clip = avs_take_clip(res, env);
 		inf = avs_get_video_info(clip);
 	}
+	avs_release_value(afile);
+	avs_release_value(args);
 	avs_release_value(res);
 	if(!avs_is_yv12(inf))
 		{fprintf(stderr, "Couldn't convert input to YV12\n"); return 1;}
@@ -133,7 +136,9 @@ int main(int argc, const char* argv[])
 		if(verbose)
 			fprintf(stderr, "%d\n", i);
 	}
+
 	if(yuv_out)
 		fclose(yuv_out);
+	avs_release_clip(clip);
 	return 0;
 }

@@ -3,3 +3,8 @@ initial release
 
 0.11 (2004-10-31)
 binmode stdout (may or may not fix some piping problems)
+
+0.12 (2004-11-9)
+reduced memory footprint
+no longer requires that avisynth be installed; merely having the dlls is enough.
+fixed a possible crash on exit

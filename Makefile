@@ -1,4 +1,4 @@
 all:
-	gcc -O3 -s -march=i686 avs2yuv.c avisynth_c.lib -o avs2yuv -mno-cygwin
+	gcc -o avs2yuv avs2yuv.c avisynth_c.lib -mno-cygwin -O3 -s -march=i686
 debug:
-	gcc -O0 -g avs2yuv.c avisynth_c.lib -o avs2yuv -mno-cygwin
+	gcc -o avs2yuv avs2yuv.c avisynth_c.lib -mno-cygwin -O0 -g

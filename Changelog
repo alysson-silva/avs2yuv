@@ -6,8 +6,12 @@ binmode stdout (may or may not fix some piping problems)
 
 0.12 (2004-11-9)
 reduced memory footprint
-no longer requires that avisynth be installed; merely having the dlls is enough.
+no longer requires that avisynth be installed; merely having the dlls is enough
 fixed a possible crash on exit
 
 0.13 (2004-11-10)
-binmode stdout again.
+binmode stdout again
+
+0.20 (2004-11-22)
+prints avisynth error messages instead of crashing
+no longer requires avisynth_c.dll

@@ -8,10 +8,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "avisynth_c.h"
 
-#define MY_VERSION "Avs2YUV 0.1"
+#define MY_VERSION "Avs2YUV 0.11"
 
 int main(int argc, const char* argv[])
 {
@@ -89,7 +90,7 @@ int main(int argc, const char* argv[])
 	FILE* yuv_out = NULL;
 	if(outfile) {
 		if(0==strcmp(outfile, "-"))
-			yuv_out = stdout;
+			yuv_out = fdopen(STDOUT_FILENO, "wb");
 		else {
 			yuv_out = fopen(outfile, "wb");
 			if(!yuv_out)

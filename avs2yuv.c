@@ -9,10 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
+#include <fcntl.h>
 #include "avisynth_c.h"
 
-#define MY_VERSION "Avs2YUV 0.12"
+#define MY_VERSION "Avs2YUV 0.13"
 
 int main(int argc, const char* argv[])
 {
@@ -60,7 +60,7 @@ int main(int argc, const char* argv[])
 		"-seek\tseek to the given frame number\n"
 		"-frames\tstop after processing this many frames\n"
 		"The outfile may be \"-\", meaning stdout.\n"
-		"Output is in yuv4mpeg, as used by MPlayer and mjpegtools\n"
+		"Output format is yuv4mpeg, as used by MPlayer and mjpegtools\n"
 		);
 		return 2;
 	}
@@ -92,9 +92,10 @@ int main(int argc, const char* argv[])
 
 	FILE* yuv_out = NULL;
 	if(outfile) {
-		if(0==strcmp(outfile, "-"))
-			yuv_out = fdopen(STDOUT_FILENO, "wb");
-		else {
+		if(0==strcmp(outfile, "-")) {
+			yuv_out = stdout;
+			setmode(fileno(yuv_out), _O_BINARY);
+		} else {
 			yuv_out = fopen(outfile, "wb");
 			if(!yuv_out)
 				{fprintf(stderr, "fopen(\"%s\") failed", outfile); return 1;}

@@ -12,8 +12,16 @@
 #include <fcntl.h>
 #include "internal.h"
 
-#define MY_VERSION "Avs2YUV 0.21"
+#ifdef _MSC_VER
+// what's up MS's std libs?
+#define dup _dup
+#define popen _popen
+#define pclose _pclose
+#define fdopen _fdopen
+#define setmode _setmode
+#endif
 
+#define MY_VERSION "Avs2YUV 0.22"
 #define MAX_FH 10
 
 int __cdecl main(int argc, const char* argv[])
@@ -43,18 +51,14 @@ int __cdecl main(int argc, const char* argv[])
 				goto add_outfile;
 			} else if(!strcmp(argv[i], "-seek")) {
 				if(i > argc-2) {fprintf(stderr, "-seek needs an argument\n"); return 2;}
-				seek = atoi(argv[i+1]);
-				if(seek < 0)
-					usage = 1;
-				i++;
+				seek = atoi(argv[++i]);
+				if(seek < 0) usage = 1;
 			} else if(!strcmp(argv[i], "-frames")) {
 				if(i > argc-2) {fprintf(stderr, "-frames needs an argument\n"); return 2;}
-				end = seek + atoi(argv[i+1]);
-				i++;
+				end = atoi(argv[++i]);
 			} else if(!strcmp(argv[i], "-hfyu")) {
 				if(i > argc-2) {fprintf(stderr, "-hfyu needs an argument\n"); return 2;}
-				hfyufile = argv[i+1];
-				i++;
+				hfyufile = argv[++i];
 			} else
 				{fprintf(stderr, "no such option: %s\n", argv[i]); return 2;}
 		} else if(!infile) {
@@ -124,10 +128,10 @@ add_outfile:
 				for(int j=0; j<i; j++)
 					if(out_fh[j] == stdout)
 						{fprintf(stderr, "can't write to stdout multiple times\n"); return 2;}
-				int dupout = _dup(_fileno(stdout));
+				int dupout = dup(_fileno(stdout));
 				fclose(stdout);
-				_setmode(dupout, O_BINARY);
-				out_fh[i] = _fdopen(dupout, "wb");
+				setmode(dupout, O_BINARY);
+				out_fh[i] = fdopen(dupout, "wb");
 			} else {
 				out_fh[i] = fopen(outfile[i], "wb");
 				if(!out_fh[i])
@@ -136,12 +140,12 @@ add_outfile:
 		}
 		if(hfyufile) {
 			char *cmd = new char[100+strlen(hfyufile)];
-			sprintf(cmd, "mencoder - -o \"%s\" -ovc lavc -lavcopts vcodec=huffyuv:vstrict=-1:pred=2", hfyufile);
-			out_fh[out_fhs] = _popen(cmd, "wb");
+			sprintf(cmd, "mencoder - -o \"%s\" -quiet -ovc lavc -lavcopts vcodec=huffyuv:vstrict=-1:pred=2", hfyufile);
+			out_fh[out_fhs] = popen(cmd, "wb");
 			if(!out_fh[out_fhs])
 				{fprintf(stderr, "failed to exec mencoder\n"); return 1;}
-			delete [] cmd;
 			out_fhs++;
+			delete [] cmd;
 		}
 
 		for(i=0; i<out_fhs; i++) {
@@ -152,6 +156,7 @@ add_outfile:
 
 		write_target = out_fhs*inf.width*inf.height*3/2;
 
+		end += seek;
 		if(end <= seek || end > inf.num_frames)
 			end = inf.num_frames;
 		for(frm = seek; frm < end; ++frm) {
@@ -194,7 +199,7 @@ add_outfile:
 	}
 
 	if(hfyufile) {
-		_pclose(out_fh[out_fhs-1]);
+		pclose(out_fh[out_fhs-1]);
 		out_fhs--;
 	}
 	for(i=0; i<out_fhs; i++)

@@ -19,3 +19,6 @@ no longer requires avisynth_c.dll
 0.21 (2004-11-22)
 write to multiple output streams
 huffyuv preset (doesn't work under wine)
+
+0.22 (2004-11-25)
+fixed a bug when -frames comes before -seek on the command line

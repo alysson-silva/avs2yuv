@@ -12,34 +12,48 @@
 #include <fcntl.h>
 #include "internal.h"
 
-#define MY_VERSION "Avs2YUV 0.20"
+#define MY_VERSION "Avs2YUV 0.21"
+
+#define MAX_FH 10
 
 int __cdecl main(int argc, const char* argv[])
 {
 	const char* infile = NULL;
-	const char* outfile = NULL;
-	FILE* yuv_out = NULL;
+	const char* outfile[MAX_FH];
+	const char* hfyufile = NULL;
+	FILE* out_fh[10];
+	int out_fhs = 0;
 	int verbose = 0;
 	int usage = 0;
 	int seek = 0;
 	int end = 0;
-	int i, frm = -1;
+	int frm = -1;
+	int i;
+	int write_target = 0; // how many bytes per frame we expect to write
 	
 	for(i=1; i<argc; i++) {
 		if(argv[i][0] == '-' && argv[i][1] != 0) {
-			if(argv[i][1] == 'v')
+			if(!strcmp(argv[i], "-v"))
 				verbose = 1;
-			else if(argv[i][1] == 'h')
+			else if(!strcmp(argv[i], "-h"))
 				usage = 1;
-			else if(!strcmp(argv[i]+1, "seek")) {
-				if(i > argc-2)
-					{fprintf(stderr, "-seek needs an argument\n"); return 2;}
-				seek = atoi(argv[i+1]);
+			else if(!strcmp(argv[i], "-o")) {
+				if(i > argc-2) {fprintf(stderr, "-o needs an argument\n"); return 2;}
 				i++;
-			} else if(!strcmp(argv[i]+1, "frames")) {
-				if(i > argc-2)
-					{fprintf(stderr, "-frames needs an argument\n"); return 2;}
+				goto add_outfile;
+			} else if(!strcmp(argv[i], "-seek")) {
+				if(i > argc-2) {fprintf(stderr, "-seek needs an argument\n"); return 2;}
+				seek = atoi(argv[i+1]);
+				if(seek < 0)
+					usage = 1;
+				i++;
+			} else if(!strcmp(argv[i], "-frames")) {
+				if(i > argc-2) {fprintf(stderr, "-frames needs an argument\n"); return 2;}
 				end = seek + atoi(argv[i+1]);
+				i++;
+			} else if(!strcmp(argv[i], "-hfyu")) {
+				if(i > argc-2) {fprintf(stderr, "-hfyu needs an argument\n"); return 2;}
+				hfyufile = argv[i+1];
 				i++;
 			} else
 				{fprintf(stderr, "no such option: %s\n", argv[i]); return 2;}
@@ -48,21 +62,24 @@ int __cdecl main(int argc, const char* argv[])
 			const char *dot = strrchr(infile, '.');
 			if(!dot || strcmp(".avs", dot))
 				fprintf(stderr, "infile (%s) doesn't look like an avisynth script\n", infile);
-		} else if(!outfile)
-			outfile = argv[i];
-		else
-			usage = 1;
+		} else {
+add_outfile:
+			if(out_fhs > MAX_FH-1)
+				{fprintf(stderr, "too many output file\n"); return 2;}
+			outfile[out_fhs] = argv[i];
+			out_fhs++;
+		}
 	}
-	if(seek < 0)
-		usage = 1;
-	if(usage || !infile || (!outfile && !verbose)) {
+
+	if(usage || !infile || (!out_fhs && !hfyufile && !verbose)) {
 		fprintf(stderr, MY_VERSION "\n"
-		"Usage: avs2yuv [options] in.avs out.yuv\n"
+		"Usage: avs2yuv [options] in.avs [-o out.yuv] [-o out2.yuv] [-hfyu out.avi]\n"
 		"-v\tprint the frame number after processing each frame\n"
 		"-seek\tseek to the given frame number\n"
 		"-frames\tstop after processing this many frames\n"
 		"The outfile may be \"-\", meaning stdout.\n"
 		"Output format is yuv4mpeg, as used by MPlayer and mjpegtools\n"
+		"Huffyuv output requires MEncoder, and probably doesn't work (yet) in Wine.\n"
 		);
 		return 2;
 	}
@@ -101,45 +118,67 @@ int __cdecl main(int argc, const char* argv[])
 			{fprintf(stderr, "Couldn't convert input to YV12\n"); return 1;}
 		if(inf.IsFieldBased())
 			{fprintf(stderr, "Needs progressive input\n"); return 1;}
-	
-		if(outfile) {
-			if(!strcmp(outfile, "-")) {
-				_setmode(_fileno(stdout), O_BINARY);
-				yuv_out = stdout;
+
+		for(i=0; i<out_fhs; i++) {
+			if(!strcmp(outfile[i], "-")) {
+				for(int j=0; j<i; j++)
+					if(out_fh[j] == stdout)
+						{fprintf(stderr, "can't write to stdout multiple times\n"); return 2;}
+				int dupout = _dup(_fileno(stdout));
+				fclose(stdout);
+				_setmode(dupout, O_BINARY);
+				out_fh[i] = _fdopen(dupout, "wb");
 			} else {
-				yuv_out = fopen(outfile, "wb");
-				if(!yuv_out)
+				out_fh[i] = fopen(outfile[i], "wb");
+				if(!out_fh[i])
 					{fprintf(stderr, "fopen(\"%s\") failed", outfile); return 1;}
 			}
-			fprintf(yuv_out, "YUV4MPEG2 W%d H%d F%ld:%ld Ip A0:0\n",
-				inf.width, inf.height, inf.fps_numerator, inf.fps_denominator);
-			fflush(yuv_out);
 		}
-		
+		if(hfyufile) {
+			char *cmd = new char[100+strlen(hfyufile)];
+			sprintf(cmd, "mencoder - -o \"%s\" -ovc lavc -lavcopts vcodec=huffyuv:vstrict=-1:pred=2", hfyufile);
+			out_fh[out_fhs] = _popen(cmd, "wb");
+			if(!out_fh[out_fhs])
+				{fprintf(stderr, "failed to exec mencoder\n"); return 1;}
+			delete [] cmd;
+			out_fhs++;
+		}
+
+		for(i=0; i<out_fhs; i++) {
+			fprintf(out_fh[i], "YUV4MPEG2 W%d H%d F%ld:%ld Ip A0:0\n",
+				inf.width, inf.height, inf.fps_numerator, inf.fps_denominator);
+			fflush(out_fh[i]);
+		}
+
+		write_target = out_fhs*inf.width*inf.height*3/2;
+
 		if(end <= seek || end > inf.num_frames)
 			end = inf.num_frames;
 		for(frm = seek; frm < end; ++frm) {
 			PVideoFrame f = clip->GetFrame(frm, env);
 	
-			if(yuv_out) {
-				int p;
+			if(out_fhs) {
 				static const int planes[] = {PLANAR_Y, PLANAR_U, PLANAR_V};
-				fwrite("FRAME\n", 1, 6, yuv_out);
-				for(p=0; p<3; p++) {
-					int wrote = 0;
+				int wrote = 0;
+
+				for(i=0; i<out_fhs; i++)
+					fwrite("FRAME\n", 1, 6, out_fh[i]);
+
+				for(int p=0; p<3; p++) {
 					int w = inf.width  >> (p ? 1 : 0);
 					int h = inf.height >> (p ? 1 : 0);
 					int pitch = f->GetPitch(planes[p]);
 					const BYTE* data = f->GetReadPtr(planes[p]);
 					int y;
 					for(y=0; y<h; y++) {
-						wrote += fwrite(data, 1, w, yuv_out);
+						for(i=0; i<out_fhs; i++)
+							wrote += fwrite(data, 1, w, out_fh[i]);
 						data += pitch;
 					}
-					if(wrote != w*h) {
-						fprintf(stderr, "Output error: wrote only %d of %d bytes\n", wrote, w*h);
-						return 1;
-					}
+				}
+				if(wrote != write_target) {
+					fprintf(stderr, "Output error: wrote only %d of %d bytes\n", wrote, write_target);
+					return 1;
 				}
 			}
 			
@@ -154,7 +193,11 @@ int __cdecl main(int argc, const char* argv[])
 		return 1;
 	}
 
-	if(yuv_out)
-		fclose(yuv_out);
+	if(hfyufile) {
+		_pclose(out_fh[out_fhs-1]);
+		out_fhs--;
+	}
+	for(i=0; i<out_fhs; i++)
+		fclose(out_fh[i]);
 	return 0;
 }

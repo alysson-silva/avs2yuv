@@ -15,3 +15,7 @@ binmode stdout again
 0.20 (2004-11-22)
 prints avisynth error messages instead of crashing
 no longer requires avisynth_c.dll
+
+0.21 (2004-11-22)
+write to multiple output streams
+huffyuv preset (doesn't work under wine)

@@ -13,15 +13,21 @@
 #include "internal.h"
 
 #ifdef _MSC_VER
-// what's up MS's std libs?
+// what's up with MS's std libs?
 #define dup _dup
 #define popen _popen
 #define pclose _pclose
 #define fdopen _fdopen
 #define setmode _setmode
+#else
+#include <unistd.h>
 #endif
 
-#define MY_VERSION "Avs2YUV 0.22"
+#ifndef INT_MAX
+#define INT_MAX 0x7fffffff
+#endif
+
+#define MY_VERSION "Avs2YUV 0.23"
 #define MAX_FH 10
 
 int __cdecl main(int argc, const char* argv[])
@@ -35,6 +41,7 @@ int __cdecl main(int argc, const char* argv[])
 	int usage = 0;
 	int seek = 0;
 	int end = 0;
+	int slave = 0;
 	int frm = -1;
 	int i;
 	int write_target = 0; // how many bytes per frame we expect to write
@@ -59,6 +66,8 @@ int __cdecl main(int argc, const char* argv[])
 			} else if(!strcmp(argv[i], "-hfyu")) {
 				if(i > argc-2) {fprintf(stderr, "-hfyu needs an argument\n"); return 2;}
 				hfyufile = argv[++i];
+			} else if(!strcmp(argv[i], "-slave")) {
+				slave = 1;
 			} else
 				{fprintf(stderr, "no such option: %s\n", argv[i]); return 2;}
 		} else if(!infile) {
@@ -77,13 +86,14 @@ add_outfile:
 
 	if(usage || !infile || (!out_fhs && !hfyufile && !verbose)) {
 		fprintf(stderr, MY_VERSION "\n"
-		"Usage: avs2yuv [options] in.avs [-o out.yuv] [-o out2.yuv] [-hfyu out.avi]\n"
+		"Usage: avs2yuv [options] in.avs [-o out.y4m] [-o out2.y4m] [-hfyu out.avi]\n"
 		"-v\tprint the frame number after processing each frame\n"
 		"-seek\tseek to the given frame number\n"
 		"-frames\tstop after processing this many frames\n"
+		"-slave\tread a list of frame numbers from stdin (one per line)\n"
 		"The outfile may be \"-\", meaning stdout.\n"
 		"Output format is yuv4mpeg, as used by MPlayer and mjpegtools\n"
-		"Huffyuv output requires MEncoder, and probably doesn't work (yet) in Wine.\n"
+		"Huffyuv output requires MEncoder, and probably doesn't work in Wine.\n"
 		);
 		return 2;
 	}
@@ -140,7 +150,7 @@ add_outfile:
 		}
 		if(hfyufile) {
 			char *cmd = new char[100+strlen(hfyufile)];
-			sprintf(cmd, "mencoder - -o \"%s\" -quiet -ovc lavc -lavcopts vcodec=huffyuv:vstrict=-1:pred=2", hfyufile);
+			sprintf(cmd, "mencoder - -o \"%s\" -quiet -ovc lavc -lavcopts vcodec=ffvhuff:vstrict=-1:pred=2:context=1", hfyufile);
 			out_fh[out_fhs] = popen(cmd, "wb");
 			if(!out_fh[out_fhs])
 				{fprintf(stderr, "failed to exec mencoder\n"); return 1;}
@@ -156,10 +166,28 @@ add_outfile:
 
 		write_target = out_fhs*inf.width*inf.height*3/2;
 
-		end += seek;
-		if(end <= seek || end > inf.num_frames)
-			end = inf.num_frames;
+		if(slave) {
+			seek = 0;
+			end = INT_MAX;
+		} else {
+			end += seek;
+			if(end <= seek || end > inf.num_frames)
+				end = inf.num_frames;
+		}
+
 		for(frm = seek; frm < end; ++frm) {
+			if(slave) {
+				char input[80];
+				frm = -1;
+				do {
+					if(!fgets(input, 80, stdin))
+						goto close_files;
+					sscanf(input, "%d", &frm);
+				} while(frm < 0);
+				if(frm >= inf.num_frames)
+					frm = inf.num_frames-1;
+			}
+
 			PVideoFrame f = clip->GetFrame(frm, env);
 	
 			if(out_fhs) {
@@ -185,6 +213,10 @@ add_outfile:
 					fprintf(stderr, "Output error: wrote only %d of %d bytes\n", wrote, write_target);
 					return 1;
 				}
+				if(slave) { // assume timing doesn't matter in other modes
+					for(i=0; i<out_fhs; i++)
+						fflush(out_fh[i]);
+				}
 			}
 			
 			if(verbose)
@@ -198,6 +230,7 @@ add_outfile:
 		return 1;
 	}
 
+close_files:
 	if(hfyufile) {
 		pclose(out_fh[out_fhs-1]);
 		out_fhs--;
